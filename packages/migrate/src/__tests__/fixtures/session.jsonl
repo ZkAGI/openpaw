@@ -1,0 +1,4 @@
+{"type":"message","role":"user","content":"Hello"}
+{"type":"message","role":"assistant","content":"Hi there!"}
+{"type":"message","role":"user","content":"How are you?"}
+{"type":"message","role":"assistant","content":"I'm doing well, thanks!"}

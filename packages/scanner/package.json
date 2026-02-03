@@ -7,14 +7,18 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@typescript-eslint/typescript-estree": "^7.0.0",
     "typescript": "^5.4.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {
-    "tsup": "^8.0.0"
+    "tsup": "^8.0.0",
+    "vitest": "^1.4.0"
   }
 }

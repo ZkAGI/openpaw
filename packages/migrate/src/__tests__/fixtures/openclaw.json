@@ -1,0 +1,15 @@
+{
+  "name": "test-agent",
+  "version": "1.0.0",
+  "mcp_servers": {
+    "github": {
+      "enabled": true,
+      "api_key_ref": "github_token"
+    }
+  },
+  "security": {
+    "allow_network": true,
+    "allow_filesystem": false
+  },
+  "custom_field": "test-value"
+}

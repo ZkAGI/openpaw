@@ -1,0 +1,4 @@
+// Cursor rules for code generation
+- Always use TypeScript
+- Follow ESLint rules
+- Write tests
