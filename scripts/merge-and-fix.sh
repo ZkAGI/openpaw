@@ -9,7 +9,7 @@ echo "  Merging All Feature Branches Into Main"
 echo "═══════════════════════════════════════════════════"
 echo ""
 
-git checkout main
+git checkout master
 
 BRANCHES=(
     "feat/vault-detect-cli"
@@ -25,7 +25,7 @@ for branch in "${BRANCHES[@]}"; do
     echo "━━━ Merging: $branch ━━━"
     
     # Check if branch has commits ahead of main
-    AHEAD=$(git rev-list main.."$branch" --count 2>/dev/null || echo "0")
+    AHEAD=$(git rev-list master.."$branch" --count 2>/dev/null || echo "0")
     if [ "$AHEAD" = "0" ]; then
         echo "  ⊘ No new commits on $branch, skipping"
         continue
