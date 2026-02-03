@@ -1,0 +1,4 @@
+*.tgz
+src/**/*.test.ts
+tsup.config.ts
+tsconfig.json
