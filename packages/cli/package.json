@@ -1,0 +1,27 @@
+{
+  "name": "@openpaw/cli",
+  "version": "1.0.0",
+  "description": "OpenPaw CLI entry point",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "openpaw": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@openpaw/detect": "workspace:*",
+    "@openpaw/vault": "workspace:*",
+    "@openpaw/scanner": "workspace:*",
+    "@openpaw/migrate": "workspace:*",
+    "commander": "^12.0.0"
+  },
+  "devDependencies": {
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  }
+}

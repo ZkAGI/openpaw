@@ -1,0 +1,47 @@
+{
+  "model": "claude-opus-4-5-20251101",
+  "permissions": {
+    "allowedTools": [
+      "Read", "Write", "Edit", "Bash(pnpm *)", "Bash(git *)",
+      "Bash(npx vitest *)", "Bash(npx eslint *)",
+      "Bash(circom *)", "Bash(snarkjs *)", "Bash(node *)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write(*.ts)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx prettier --write $TOOL_INPUT_FILE_PATH 2>/dev/null || true",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "agent",
+            "prompt": "Before stopping, verify: 1) Run 'pnpm test' and confirm all tests pass. 2) Check that no test files contain 'vi.mock' for business logic. 3) Verify the last commit message describes a real, testable change. Report PASS or FAIL with details. $ARGUMENTS",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash(rm *)",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "echo 'WARNING: Destructive command detected. Proceed with caution.' >&2",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

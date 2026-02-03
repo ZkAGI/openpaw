@@ -1,0 +1,23 @@
+{
+  "name": "@openpaw/zk-prover",
+  "version": "1.0.0",
+  "description": "Circom + Groth16 ZK proof generation",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "typecheck": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "snarkjs": "^0.7.0",
+    "circomlib": "^2.0.5",
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "circom_tester": "^0.0.19",
+    "tsup": "^8.0.0",
+    "typescript": "^5.4.0"
+  }
+}
