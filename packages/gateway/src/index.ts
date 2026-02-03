@@ -493,13 +493,30 @@ export async function startGateway(config: GatewayStartConfig = {}): Promise<Gat
     console.log(`Decrypted ${processedFiles.length} auth-profiles.json file(s)`);
   }
 
+  // Platform-specific spawn helper
+  const isWindows = process.platform === 'win32';
+
+  const spawnOpenClaw = (command: string, args: string[] = []): ChildProcess => {
+    if (isWindows) {
+      // On Windows, use cmd.exe to avoid EINVAL errors
+      return spawn('cmd.exe', ['/c', command, ...args], {
+        stdio: 'inherit',
+        env: { ...process.env },
+      });
+    } else {
+      // On Mac/Linux, use shell: true for PATH resolution
+      return spawn(command, args, {
+        stdio: 'inherit',
+        env: { ...process.env },
+        shell: true,
+      });
+    }
+  };
+
   // Spawn OpenClaw if binary found
   if (openclawBinary) {
     console.log(`Starting OpenClaw: ${openclawBinary}`);
-    openclawProcess = spawn(openclawBinary, [], {
-      stdio: 'inherit',
-      env: { ...process.env },
-    });
+    openclawProcess = spawnOpenClaw(openclawBinary);
 
     openclawProcess.on('exit', async (code) => {
       console.log(`OpenClaw exited with code ${code}`);
@@ -510,15 +527,12 @@ export async function startGateway(config: GatewayStartConfig = {}): Promise<Gat
     openclawProcess.on('error', async (err) => {
       console.error(`Failed to start OpenClaw: ${err.message}`);
       await cleanup();
+      process.exit(1);
     });
   } else {
     // Try npx openclaw
     console.log('Starting OpenClaw via npx...');
-    openclawProcess = spawn('npx', ['openclaw'], {
-      stdio: 'inherit',
-      env: { ...process.env },
-      shell: true,
-    });
+    openclawProcess = spawnOpenClaw('npx', ['openclaw']);
 
     openclawProcess.on('exit', async (code) => {
       console.log(`OpenClaw exited with code ${code}`);
@@ -528,8 +542,8 @@ export async function startGateway(config: GatewayStartConfig = {}): Promise<Gat
 
     openclawProcess.on('error', async (err) => {
       console.error(`Failed to start OpenClaw: ${err.message}`);
-      // Keep running even without OpenClaw - user may want just the credential management
-      console.log('OpenClaw not found. Gateway running in standalone mode.');
+      await cleanup();
+      process.exit(1);
     });
   }
 
