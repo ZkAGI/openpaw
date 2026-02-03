@@ -1,9 +1,12 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { randomUUID } from 'node:crypto';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, copyFile, unlink, chmod } from 'node:fs/promises';
 import { join } from 'node:path';
+import { homedir } from 'node:os';
+import { spawn, type ChildProcess } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { z } from 'zod';
-import { encrypt, decrypt } from '@zkagi/openpaw-vault';
+import { encrypt, decrypt, createVault, type Vault } from '@zkagi/openpaw-vault';
 
 export const DEFAULT_PORT = 18789;
 
@@ -230,4 +233,309 @@ export function createGateway(port: number = DEFAULT_PORT): WebSocketServer {
   });
 
   return wss;
+}
+
+// ============================================================================
+// OpenPaw Gateway Start Command
+// ============================================================================
+
+export interface GatewayStartConfig {
+  port?: number;
+  openclawDir?: string;
+  openpawDir?: string;
+}
+
+export interface GatewayStartResult {
+  port: number;
+  openclawProcess: ChildProcess | null;
+  cleanup: () => Promise<void>;
+}
+
+interface AuthProfile {
+  [key: string]: unknown;
+  key?: string;
+}
+
+interface AuthProfilesFile {
+  profiles?: Record<string, AuthProfile>;
+  [key: string]: unknown;
+}
+
+/**
+ * Find the OpenClaw binary location
+ */
+async function findOpenClawBinary(openclawDir: string): Promise<string | null> {
+  // Check if 'openclaw' is in PATH
+  const pathBinary = process.platform === 'win32' ? 'openclaw.cmd' : 'openclaw';
+  const pathDirs = (process.env['PATH'] ?? '').split(process.platform === 'win32' ? ';' : ':');
+
+  for (const dir of pathDirs) {
+    const fullPath = join(dir, pathBinary);
+    if (existsSync(fullPath)) {
+      return fullPath;
+    }
+  }
+
+  // Check in ~/.openclaw/node_modules/.bin/openclaw
+  const localBinary = join(openclawDir, 'node_modules', '.bin', 'openclaw');
+  if (existsSync(localBinary)) {
+    return localBinary;
+  }
+
+  // Will use npx as fallback
+  return null;
+}
+
+/**
+ * Find all auth-profiles.json files in OpenClaw agents directory
+ */
+async function findAuthProfileFiles(openclawDir: string): Promise<string[]> {
+  const agentsDir = join(openclawDir, 'agents');
+  const profileFiles: string[] = [];
+
+  try {
+    const agents = await readdir(agentsDir);
+    for (const agent of agents) {
+      const agentDir = join(agentsDir, agent, 'agent');
+      const profilePath = join(agentDir, 'auth-profiles.json');
+      if (existsSync(profilePath)) {
+        profileFiles.push(profilePath);
+      }
+    }
+  } catch {
+    // No agents directory
+  }
+
+  return profileFiles;
+}
+
+/**
+ * Process auth-profiles.json: replace openpaw:vault: references with real credentials
+ */
+async function processAuthProfiles(
+  profilePath: string,
+  vault: Vault,
+  backupSuffix: string
+): Promise<{ original: string; processed: boolean }> {
+  const content = await readFile(profilePath, 'utf8');
+  const data = JSON.parse(content) as AuthProfilesFile;
+  let modified = false;
+
+  if (data.profiles) {
+    for (const profileName of Object.keys(data.profiles)) {
+      const profile = data.profiles[profileName];
+      if (profile && typeof profile.key === 'string' && profile.key.startsWith('openpaw:vault:')) {
+        const credId = profile.key.replace('openpaw:vault:', '');
+        const result = vault.get(credId);
+        if (result) {
+          profile.key = result.value;
+          modified = true;
+        }
+      }
+    }
+  }
+
+  if (modified) {
+    // Backup original
+    await copyFile(profilePath, `${profilePath}${backupSuffix}`);
+    // Write decrypted version with restricted permissions
+    await writeFile(profilePath, JSON.stringify(data, null, 2), { mode: 0o600 });
+  }
+
+  return { original: content, processed: modified };
+}
+
+/**
+ * Restore auth-profiles.json from backup
+ */
+async function restoreAuthProfiles(
+  profilePath: string,
+  backupSuffix: string
+): Promise<void> {
+  const backupPath = `${profilePath}${backupSuffix}`;
+  if (existsSync(backupPath)) {
+    await copyFile(backupPath, profilePath);
+    await unlink(backupPath);
+  }
+}
+
+/**
+ * Start the OpenPaw gateway with OpenClaw integration
+ *
+ * This function:
+ * 1. Reads the vault and decrypts credentials into memory
+ * 2. Temporarily writes decrypted credentials to auth-profiles.json
+ * 3. Spawns OpenClaw as a child process
+ * 4. On exit, restores the original auth-profiles.json
+ */
+export async function startGateway(config: GatewayStartConfig = {}): Promise<GatewayStartResult> {
+  const openpawDir = config.openpawDir ?? join(homedir(), '.openpaw');
+  const openclawDir = config.openclawDir ?? join(homedir(), '.openclaw');
+
+  const keyFile = join(openpawDir, 'master.key');
+  const vaultFile = join(openpawDir, 'vault.json');
+
+  // Read OpenClaw config for port
+  let port = config.port ?? DEFAULT_PORT;
+  try {
+    const openclawConfig = JSON.parse(await readFile(join(openclawDir, 'openclaw.json'), 'utf8'));
+    if (openclawConfig.port) {
+      port = openclawConfig.port;
+    }
+  } catch {
+    // Use default port
+  }
+
+  // Load master key and vault
+  let vault: Vault;
+  try {
+    const keyData = await readFile(keyFile);
+    vault = await createVault(keyData, vaultFile);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
+      throw new Error('Vault not initialized. Run "openpaw vault import" first to set up credentials.');
+    }
+    throw error;
+  }
+
+  // Find and process auth-profiles.json files
+  const profileFiles = await findAuthProfileFiles(openclawDir);
+  const backupSuffix = '.openpaw-backup';
+  const processedFiles: string[] = [];
+
+  for (const profilePath of profileFiles) {
+    const result = await processAuthProfiles(profilePath, vault, backupSuffix);
+    if (result.processed) {
+      processedFiles.push(profilePath);
+    }
+  }
+
+  // Track cleanup state
+  let cleanedUp = false;
+  let openclawProcess: ChildProcess | null = null;
+
+  // Cleanup function - restores auth-profiles.json
+  const cleanup = async (): Promise<void> => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+
+    console.log('\nRe-encrypting credentials...');
+
+    // Restore all processed auth-profiles.json files
+    for (const profilePath of processedFiles) {
+      try {
+        await restoreAuthProfiles(profilePath, backupSuffix);
+        console.log(`  Restored: ${profilePath}`);
+      } catch (err) {
+        console.error(`  Failed to restore ${profilePath}: ${(err as Error).message}`);
+      }
+    }
+
+    // Kill OpenClaw process if still running
+    if (openclawProcess && !openclawProcess.killed) {
+      openclawProcess.kill('SIGTERM');
+    }
+
+    console.log('Credentials secured.');
+  };
+
+  // Synchronous cleanup for exit handler
+  const cleanupSync = (): void => {
+    if (cleanedUp) return;
+    cleanedUp = true;
+
+    // Synchronous restore using fs module
+    const fs = require('node:fs');
+    for (const profilePath of processedFiles) {
+      try {
+        const backupPath = `${profilePath}${backupSuffix}`;
+        if (fs.existsSync(backupPath)) {
+          fs.copyFileSync(backupPath, profilePath);
+          fs.unlinkSync(backupPath);
+        }
+      } catch {
+        // Best effort
+      }
+    }
+
+    if (openclawProcess && !openclawProcess.killed) {
+      openclawProcess.kill('SIGTERM');
+    }
+  };
+
+  // Register cleanup handlers - bulletproof cleanup
+  process.on('exit', cleanupSync);
+  process.on('SIGINT', async () => {
+    await cleanup();
+    process.exit(0);
+  });
+  process.on('SIGTERM', async () => {
+    await cleanup();
+    process.exit(0);
+  });
+  process.on('uncaughtException', async (err) => {
+    console.error('Uncaught exception:', err);
+    await cleanup();
+    process.exit(1);
+  });
+  process.on('unhandledRejection', async (reason) => {
+    console.error('Unhandled rejection:', reason);
+    await cleanup();
+    process.exit(1);
+  });
+
+  // Find OpenClaw binary
+  const openclawBinary = await findOpenClawBinary(openclawDir);
+
+  // Print status
+  console.log(`Gateway running on port ${port}. Credentials decrypted in memory. Press Ctrl+C to stop and re-encrypt.`);
+  if (processedFiles.length > 0) {
+    console.log(`Decrypted ${processedFiles.length} auth-profiles.json file(s)`);
+  }
+
+  // Spawn OpenClaw if binary found
+  if (openclawBinary) {
+    console.log(`Starting OpenClaw: ${openclawBinary}`);
+    openclawProcess = spawn(openclawBinary, [], {
+      stdio: 'inherit',
+      env: { ...process.env },
+    });
+
+    openclawProcess.on('exit', async (code) => {
+      console.log(`OpenClaw exited with code ${code}`);
+      await cleanup();
+      process.exit(code ?? 0);
+    });
+
+    openclawProcess.on('error', async (err) => {
+      console.error(`Failed to start OpenClaw: ${err.message}`);
+      await cleanup();
+    });
+  } else {
+    // Try npx openclaw
+    console.log('Starting OpenClaw via npx...');
+    openclawProcess = spawn('npx', ['openclaw'], {
+      stdio: 'inherit',
+      env: { ...process.env },
+      shell: true,
+    });
+
+    openclawProcess.on('exit', async (code) => {
+      console.log(`OpenClaw exited with code ${code}`);
+      await cleanup();
+      process.exit(code ?? 0);
+    });
+
+    openclawProcess.on('error', async (err) => {
+      console.error(`Failed to start OpenClaw: ${err.message}`);
+      // Keep running even without OpenClaw - user may want just the credential management
+      console.log('OpenClaw not found. Gateway running in standalone mode.');
+    });
+  }
+
+  return {
+    port,
+    openclawProcess,
+    cleanup,
+  };
 }

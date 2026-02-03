@@ -17,7 +17,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@zkagi/openpaw-vault": "1.0.0",
+    "@zkagi/openpaw-vault": "workspace:*",
     "zod": "^3.22.0"
   },
   "devDependencies": {

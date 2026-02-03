@@ -10,6 +10,7 @@ export default defineConfig({
     '@zkagi/openpaw-vault',
     '@zkagi/openpaw-scanner',
     '@zkagi/openpaw-migrate',
+    '@zkagi/openpaw-gateway',
   ],
   banner: {
     js: '#!/usr/bin/env node',

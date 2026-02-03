@@ -3,6 +3,7 @@ import { createVault, generateMasterKey, encrypt } from '@zkagi/openpaw-vault';
 import { detectAgents, formatDetectResultAsJson } from '@zkagi/openpaw-detect';
 import { scanDirectory, type Severity, type CredentialFinding } from '@zkagi/openpaw-scanner';
 import { copyWorkspaceFiles, encryptSession, translateConfig, migrateCredentials, type MigrationSource, MigrationSourceSchema } from '@zkagi/openpaw-migrate';
+import { startGateway } from '@zkagi/openpaw-gateway';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -397,13 +398,23 @@ program
     }
   });
 
-// Start command (placeholder)
+// Start command
 program
   .command('start')
   .description('Start OpenPaw services')
-  .action(async () => {
-    console.log('Starting OpenPaw services...');
-    console.log('(Gateway and MCP proxy not yet implemented)');
+  .option('--port <port>', 'Gateway port', '18789')
+  .option('--openclaw-dir <path>', 'OpenClaw config directory', join(homedir(), '.openclaw'))
+  .action(async (options: { port: string; openclawDir: string }) => {
+    try {
+      await startGateway({
+        port: parseInt(options.port, 10),
+        openclawDir: options.openclawDir,
+      });
+      // Keep process running - startGateway handles signals
+    } catch (error) {
+      console.error(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
   });
 
 // Stop command (placeholder)
