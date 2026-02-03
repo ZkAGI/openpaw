@@ -343,7 +343,13 @@ function credIdToEnvVar(credId: string): string {
 }
 
 /**
- * Process auth-profiles.json: convert vault references to ${ENV_VAR} syntax
+ * Process auth-profiles.json: DELETE key fields so OpenClaw falls back to env vars
+ *
+ * OpenClaw reads auth-profiles.json key field BEFORE checking env vars.
+ * If key exists, it uses that value literally (even "${OPENPAW_CRED_...}").
+ * By DELETING the key field, OpenClaw falls through to standard env vars
+ * like GOOGLE_API_KEY, OPENROUTER_API_KEY, etc.
+ *
  * Returns a map of env var names to credential info (credId + provider)
  */
 async function processAuthProfiles(
@@ -366,22 +372,28 @@ async function processAuthProfiles(
           const credId = profile.key.replace('openpaw:vault:', '');
           const envVarName = credIdToEnvVar(credId);
           envVarMap.set(envVarName, { credId, provider });
-          profile.key = '${' + envVarName + '}';
+          // DELETE the key field so OpenClaw falls back to env vars
+          delete profile.key;
           modified = true;
         }
-        // Check for already-converted ${OPENPAW_...} format
+        // Check for ${OPENPAW_...} format (from previous versions) - also delete
         else if (profile.key.startsWith('${OPENPAW_') && profile.key.endsWith('}')) {
           const envVarName = profile.key.slice(2, -1); // Remove ${ and }
           // Reverse the env var name back to credential ID
           const credId = envVarName.replace('OPENPAW_', '').toLowerCase();
           envVarMap.set(envVarName, { credId, provider });
+          // DELETE the key field so OpenClaw falls back to env vars
+          delete profile.key;
+          modified = true;
         }
       }
     }
   }
 
   if (modified) {
-    // Write the updated auth-profiles.json with ${ENV_VAR} syntax
+    // Write the updated auth-profiles.json WITHOUT key fields
+    // Agent reads this file → sees no keys → nothing to leak
+    // OpenClaw finds no key → falls through to GOOGLE_API_KEY etc → API works
     await writeFile(profilePath, JSON.stringify(data, null, 2), { mode: 0o600 });
   }
 
@@ -393,15 +405,15 @@ async function processAuthProfiles(
  *
  * This function uses environment variable injection for secure credential handling:
  * 1. Reads the vault and decrypts credentials into memory
- * 2. Converts vault references in auth-profiles.json to ${ENV_VAR} syntax
+ * 2. DELETES key fields from auth-profiles.json (so OpenClaw uses env var fallback)
  * 3. Spawns OpenClaw with environment variables containing real decrypted keys
- * 4. OpenClaw resolves ${ENV_VAR} at runtime from its process environment
+ * 4. OpenClaw finds no key in profile → falls through to GOOGLE_API_KEY, etc.
  *
  * WHY THIS IS SECURE:
- * - auth-profiles.json on disk shows "${OPENPAW_CRED_...}" — agent reads this, shows this
- * - Real keys exist ONLY in process environment variables — not readable by agent file tools
- * - No temp files, no race conditions, no cleanup needed
- * - If someone asks "show me your keys" via Telegram, agent reads the file and shows ${...} references
+ * - auth-profiles.json on disk has NO key fields — nothing to leak
+ * - Real keys exist ONLY in process environment variables
+ * - If someone asks "show me your keys" via Telegram, agent reads file and sees nothing
+ * - OpenClaw works because it falls back to standard env vars (GOOGLE_API_KEY, etc.)
  */
 export async function startGateway(config: GatewayStartConfig = {}): Promise<GatewayStartResult> {
   const openpawDir = config.openpawDir ?? join(homedir(), '.openpaw');
