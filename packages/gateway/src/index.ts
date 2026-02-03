@@ -254,12 +254,37 @@ export interface GatewayStartResult {
 interface AuthProfile {
   [key: string]: unknown;
   key?: string;
+  provider?: string;
 }
 
 interface AuthProfilesFile {
   profiles?: Record<string, AuthProfile>;
   [key: string]: unknown;
 }
+
+/**
+ * Credential info with provider context for env var injection
+ */
+interface CredentialInfo {
+  credId: string;
+  provider: string | undefined;
+}
+
+/**
+ * Map provider names to their standard environment variable names
+ * OpenClaw natively reads these env vars for API authentication
+ */
+const PROVIDER_ENV_VARS: Record<string, string[]> = {
+  google: ['GOOGLE_API_KEY', 'GEMINI_API_KEY'],
+  openrouter: ['OPENROUTER_API_KEY'],
+  openai: ['OPENAI_API_KEY'],
+  anthropic: ['ANTHROPIC_API_KEY'],
+  cohere: ['COHERE_API_KEY'],
+  mistral: ['MISTRAL_API_KEY'],
+  groq: ['GROQ_API_KEY'],
+  together: ['TOGETHER_API_KEY'],
+  perplexity: ['PERPLEXITY_API_KEY'],
+};
 
 /**
  * Find the OpenClaw binary location
@@ -319,26 +344,28 @@ function credIdToEnvVar(credId: string): string {
 
 /**
  * Process auth-profiles.json: convert vault references to ${ENV_VAR} syntax
- * Returns a map of env var names to credential IDs that need to be resolved
+ * Returns a map of env var names to credential info (credId + provider)
  */
 async function processAuthProfiles(
   profilePath: string,
   vault: Vault
-): Promise<Map<string, string>> {
+): Promise<Map<string, CredentialInfo>> {
   const content = await readFile(profilePath, 'utf8');
   const data = JSON.parse(content) as AuthProfilesFile;
-  const envVarMap = new Map<string, string>(); // envVarName -> credId
+  const envVarMap = new Map<string, CredentialInfo>(); // envVarName -> {credId, provider}
   let modified = false;
 
   if (data.profiles) {
     for (const profileName of Object.keys(data.profiles)) {
       const profile = data.profiles[profileName];
       if (profile && typeof profile.key === 'string') {
+        const provider = typeof profile.provider === 'string' ? profile.provider : undefined;
+
         // Check for openpaw:vault: format (from migrate command)
         if (profile.key.startsWith('openpaw:vault:')) {
           const credId = profile.key.replace('openpaw:vault:', '');
           const envVarName = credIdToEnvVar(credId);
-          envVarMap.set(envVarName, credId);
+          envVarMap.set(envVarName, { credId, provider });
           profile.key = '${' + envVarName + '}';
           modified = true;
         }
@@ -347,7 +374,7 @@ async function processAuthProfiles(
           const envVarName = profile.key.slice(2, -1); // Remove ${ and }
           // Reverse the env var name back to credential ID
           const credId = envVarName.replace('OPENPAW_', '').toLowerCase();
-          envVarMap.set(envVarName, credId);
+          envVarMap.set(envVarName, { credId, provider });
         }
       }
     }
@@ -409,31 +436,46 @@ export async function startGateway(config: GatewayStartConfig = {}): Promise<Gat
   // Find and process auth-profiles.json files
   // This converts "openpaw:vault:..." to "${OPENPAW_CRED_...}" format
   const profileFiles = await findAuthProfileFiles(openclawDir);
-  const allEnvVars = new Map<string, string>(); // envVarName -> credId
+  const allEnvVars = new Map<string, CredentialInfo>(); // envVarName -> {credId, provider}
 
   for (const profilePath of profileFiles) {
     const envVars = await processAuthProfiles(profilePath, vault);
-    for (const [envVarName, credId] of envVars) {
-      allEnvVars.set(envVarName, credId);
+    for (const [envVarName, credInfo] of envVars) {
+      allEnvVars.set(envVarName, credInfo);
     }
   }
 
   // Build environment variables with decrypted credentials
   const childEnv: Record<string, string> = { ...process.env } as Record<string, string>;
   let credentialsLoaded = 0;
+  let providerEnvVarsSet = 0;
 
-  for (const [envVarName, credId] of allEnvVars) {
-    const result = vault.get(credId);
+  for (const [envVarName, credInfo] of allEnvVars) {
+    const result = vault.get(credInfo.credId);
     if (result) {
+      // Set the OPENPAW_CRED_* env var (for security display in auth-profiles.json)
       childEnv[envVarName] = result.value;
       credentialsLoaded++;
       console.log(`  ${envVarName} → [secured]`);
+
+      // Also set standard provider env vars that OpenClaw natively recognizes
+      // This is what actually makes API calls work
+      if (credInfo.provider) {
+        const providerEnvVars = PROVIDER_ENV_VARS[credInfo.provider.toLowerCase()];
+        if (providerEnvVars) {
+          for (const providerEnvVar of providerEnvVars) {
+            childEnv[providerEnvVar] = result.value;
+            providerEnvVarsSet++;
+            console.log(`  ${providerEnvVar} → [secured] (${credInfo.provider})`);
+          }
+        }
+      }
     } else {
-      console.warn(`  Warning: Credential ${credId} not found in vault`);
+      console.warn(`  Warning: Credential ${credInfo.credId} not found in vault`);
     }
   }
 
-  console.log(`Loaded ${credentialsLoaded} credential(s) into environment`);
+  console.log(`Loaded ${credentialsLoaded} credential(s), set ${providerEnvVarsSet} provider env var(s)`);
 
   // Track cleanup state
   let cleanedUp = false;
