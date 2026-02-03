@@ -16,6 +16,53 @@ export const FindingSchema = z.object({
 
 export type Finding = z.infer<typeof FindingSchema>;
 
+export const CredentialFindingSchema = z.object({
+  rule: z.literal('credential'),
+  severity: SeveritySchema,
+  message: z.string(),
+  file: z.string(),
+  line: z.number(),
+  column: z.number(),
+  type: z.string(),
+  maskedValue: z.string(),
+});
+
+export type CredentialFinding = z.infer<typeof CredentialFindingSchema>;
+
+// Credential patterns for common API keys
+export const CREDENTIAL_PATTERNS: Array<{ name: string; pattern: RegExp; mask: (value: string) => string }> = [
+  {
+    name: 'openai',
+    pattern: /sk-[a-zA-Z0-9]{20,}/g,
+    mask: (v) => v.slice(0, 7) + '*'.repeat(Math.max(0, v.length - 11)) + v.slice(-4),
+  },
+  {
+    name: 'google',
+    pattern: /AIza[a-zA-Z0-9_-]{35}/g,
+    mask: (v) => v.slice(0, 8) + '*'.repeat(Math.max(0, v.length - 12)) + v.slice(-4),
+  },
+  {
+    name: 'openrouter',
+    pattern: /sk-or-v1-[a-f0-9]{64}/g,
+    mask: (v) => v.slice(0, 12) + '*'.repeat(Math.max(0, v.length - 16)) + v.slice(-4),
+  },
+  {
+    name: 'github',
+    pattern: /ghp_[a-zA-Z0-9]{36}/g,
+    mask: (v) => v.slice(0, 7) + '*'.repeat(Math.max(0, v.length - 11)) + v.slice(-4),
+  },
+  {
+    name: 'slack',
+    pattern: /xoxb-[0-9]+-[0-9]+-[a-zA-Z0-9]+/g,
+    mask: (v) => v.slice(0, 9) + '*'.repeat(Math.max(0, v.length - 13)) + v.slice(-4),
+  },
+  {
+    name: 'aws',
+    pattern: /AKIA[A-Z0-9]{16}/g,
+    mask: (v) => v.slice(0, 8) + '*'.repeat(Math.max(0, v.length - 12)) + v.slice(-4),
+  },
+];
+
 export interface ScanResult {
   findings: Finding[];
   scannedFiles: number;
@@ -207,11 +254,52 @@ export async function scanFile(filePath: string): Promise<Finding[]> {
   return scanSource(source, filePath);
 }
 
-export async function scanDirectory(dirPath: string): Promise<ScanResult> {
+export function scanCredentialsSource(source: string, fileName: string): CredentialFinding[] {
+  const findings: CredentialFinding[] = [];
+  const lines = source.split('\n');
+
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+    const line = lines[lineIndex]!;
+
+    for (const { name, pattern, mask } of CREDENTIAL_PATTERNS) {
+      // Reset regex state for global patterns
+      pattern.lastIndex = 0;
+      let match: RegExpExecArray | null;
+
+      while ((match = pattern.exec(line)) !== null) {
+        findings.push({
+          rule: 'credential',
+          severity: 'CRITICAL',
+          message: `Exposed ${name} API key detected`,
+          file: fileName,
+          line: lineIndex + 1,
+          column: match.index,
+          type: name,
+          maskedValue: mask(match[0]),
+        });
+      }
+    }
+  }
+
+  return findings;
+}
+
+export async function scanCredentials(filePath: string): Promise<CredentialFinding[]> {
+  const { readFile } = await import('node:fs/promises');
+  const source = await readFile(filePath, 'utf8');
+  return scanCredentialsSource(source, filePath);
+}
+
+export interface ScanResultExtended extends ScanResult {
+  credentialFindings: CredentialFinding[];
+}
+
+export async function scanDirectory(dirPath: string): Promise<ScanResultExtended> {
   const { readdir, stat } = await import('node:fs/promises');
   const { join } = await import('node:path');
 
   const findings: Finding[] = [];
+  const credentialFindings: CredentialFinding[] = [];
   let scannedFiles = 0;
 
   async function scanRecursive(currentPath: string): Promise<void> {
@@ -227,10 +315,19 @@ export async function scanDirectory(dirPath: string): Promise<ScanResult> {
           await scanRecursive(fullPath);
         }
       } else if (stats.isFile()) {
-        // Only scan TypeScript and JavaScript files
+        // Scan TypeScript and JavaScript files for AST-based rules
         if (/\.(ts|tsx|js|jsx)$/.test(entry)) {
           const fileFindings = await scanFile(fullPath);
           findings.push(...fileFindings);
+          // Also scan code files for credentials
+          const credFindings = await scanCredentials(fullPath);
+          credentialFindings.push(...credFindings);
+          scannedFiles++;
+        }
+        // Scan config and data files for credentials
+        else if (/\.(json|env|yaml|yml|txt)$/.test(entry) || entry === '.env') {
+          const credFindings = await scanCredentials(fullPath);
+          credentialFindings.push(...credFindings);
           scannedFiles++;
         }
       }
@@ -241,6 +338,7 @@ export async function scanDirectory(dirPath: string): Promise<ScanResult> {
 
   return {
     findings,
+    credentialFindings,
     scannedFiles,
     scannedAt: new Date(),
   };

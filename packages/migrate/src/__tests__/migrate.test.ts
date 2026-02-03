@@ -1,11 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { copyWorkspaceFiles, encryptSession, translateConfig } from '../index.js';
-import { readFile, writeFile, mkdir, rm, readdir } from 'node:fs/promises';
+import { copyWorkspaceFiles, encryptSession, translateConfig, migrateCredentials, migrateCredentialsFromFile } from '../index.js';
+import { readFile, writeFile, mkdir, rm, readdir, stat, copyFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { decrypt } from '@openpaw/vault';
+import { decrypt, createVault, generateMasterKey } from '@openpaw/vault';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -287,5 +287,234 @@ describe('Migrate - Integration', () => {
     // Cleanup
     await rm(destDir, { recursive: true });
     await rm(encryptedPath);
+  });
+});
+
+describe('Migrate - Credential Migration', () => {
+  const tempOpenclawDir = join(__dirname, 'temp-openclaw');
+  const tempVaultPath = join(__dirname, 'temp-vault.json');
+
+  afterEach(async () => {
+    try {
+      await rm(tempOpenclawDir, { recursive: true, force: true });
+    } catch { /* Ignore cleanup errors */ }
+    try {
+      await rm(tempVaultPath, { force: true });
+    } catch { /* Ignore cleanup errors */ }
+  });
+
+  it('migrates credentials from auth-profiles.json to vault', async () => {
+    // Create test directory structure: ~/.openclaw/agents/test-agent/agent/auth-profiles.json
+    const agentDir = join(tempOpenclawDir, 'agents', 'test-agent', 'agent');
+    await mkdir(agentDir, { recursive: true });
+
+    // Create auth-profiles.json with real key format
+    const authProfiles = {
+      version: 1,
+      profiles: {
+        'google:default': {
+          type: 'api_key',
+          provider: 'google',
+          key: 'AIzaSyB-1234567890abcdefghijklmnopqrstuvwx',
+        },
+        'openrouter:default': {
+          type: 'api_key',
+          provider: 'openrouter',
+          key: 'sk-or-v1-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789',
+        },
+      },
+    };
+
+    const authProfilesPath = join(agentDir, 'auth-profiles.json');
+    await writeFile(authProfilesPath, JSON.stringify(authProfiles, null, 2));
+
+    // Create vault
+    const key = generateMasterKey();
+    const vault = await createVault(key, tempVaultPath);
+
+    // Migrate credentials
+    const result = await migrateCredentials(tempOpenclawDir, vault);
+
+    // Verify results
+    expect(result.profilesProcessed).toBe(2);
+    expect(result.credentialsImported).toBe(2);
+    expect(result.credentialIds.length).toBe(2);
+    expect(result.filesBackedUp.length).toBe(1);
+    expect(result.errors.length).toBe(0);
+
+    // Verify backup exists
+    const backupPath = `${authProfilesPath}.bak`;
+    const backupStat = await stat(backupPath);
+    expect(backupStat.isFile()).toBe(true);
+
+    // Verify backup contains original data
+    const backupContent = JSON.parse(await readFile(backupPath, 'utf8'));
+    expect(backupContent.profiles['google:default'].key).toBe('AIzaSyB-1234567890abcdefghijklmnopqrstuvwx');
+
+    // Verify rewritten file has vault references
+    const rewritten = JSON.parse(await readFile(authProfilesPath, 'utf8'));
+    expect(rewritten.profiles['google:default'].key).toMatch(/^openpaw:vault:cred_/);
+    expect(rewritten.profiles['openrouter:default'].key).toMatch(/^openpaw:vault:cred_/);
+
+    // Verify vault contains imported credentials
+    const vaultCredentials = vault.list();
+    expect(vaultCredentials.length).toBe(2);
+
+    // Verify we can retrieve the original values from vault
+    for (const credId of result.credentialIds) {
+      const credResult = vault.get(credId);
+      expect(credResult).not.toBeNull();
+      expect(credResult!.value.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('migrates credentials from a single file', async () => {
+    // Create temp file
+    const tempDir = join(__dirname, 'temp-single-file');
+    await mkdir(tempDir, { recursive: true });
+
+    const authProfilesPath = join(tempDir, 'auth-profiles.json');
+    const authProfiles = {
+      version: 1,
+      profiles: {
+        'openai:default': {
+          type: 'api_key',
+          provider: 'openai',
+          key: 'sk-testkey12345678901234567890abcdefghij',
+        },
+      },
+    };
+
+    await writeFile(authProfilesPath, JSON.stringify(authProfiles, null, 2));
+
+    // Create vault
+    const key = generateMasterKey();
+    const vault = await createVault(key, tempVaultPath);
+
+    // Migrate from single file
+    const result = await migrateCredentialsFromFile(authProfilesPath, vault);
+
+    expect(result.profilesProcessed).toBe(1);
+    expect(result.credentialsImported).toBe(1);
+    expect(result.filesBackedUp.length).toBe(1);
+
+    // Verify rewritten
+    const rewritten = JSON.parse(await readFile(authProfilesPath, 'utf8'));
+    expect(rewritten.profiles['openai:default'].key).toMatch(/^openpaw:vault:cred_openai_api_key_/);
+
+    // Cleanup
+    await rm(tempDir, { recursive: true });
+  });
+
+  it('skips already-migrated credentials', async () => {
+    const tempDir = join(__dirname, 'temp-already-migrated');
+    await mkdir(tempDir, { recursive: true });
+
+    const authProfilesPath = join(tempDir, 'auth-profiles.json');
+    const authProfiles = {
+      version: 1,
+      profiles: {
+        'openai:default': {
+          type: 'api_key',
+          provider: 'openai',
+          key: 'openpaw:vault:cred_openai_api_key_12345678', // Already migrated
+        },
+      },
+    };
+
+    await writeFile(authProfilesPath, JSON.stringify(authProfiles, null, 2));
+
+    const key = generateMasterKey();
+    const vault = await createVault(key, tempVaultPath);
+
+    const result = await migrateCredentialsFromFile(authProfilesPath, vault);
+
+    expect(result.profilesProcessed).toBe(1);
+    expect(result.credentialsImported).toBe(0); // Should not import again
+
+    // Cleanup
+    await rm(tempDir, { recursive: true });
+  });
+
+  it('handles multiple agents with auth-profiles.json', async () => {
+    // Create multiple agent directories
+    const agents = ['agent1', 'agent2', 'agent3'];
+
+    for (const agent of agents) {
+      const agentDir = join(tempOpenclawDir, 'agents', agent, 'agent');
+      await mkdir(agentDir, { recursive: true });
+
+      await writeFile(
+        join(agentDir, 'auth-profiles.json'),
+        JSON.stringify({
+          version: 1,
+          profiles: {
+            [`${agent}:default`]: {
+              type: 'api_key',
+              provider: agent,
+              key: `sk-${agent}12345678901234567890abcdefghij`,
+            },
+          },
+        })
+      );
+    }
+
+    const key = generateMasterKey();
+    const vault = await createVault(key, tempVaultPath);
+
+    const result = await migrateCredentials(tempOpenclawDir, vault);
+
+    expect(result.profilesProcessed).toBe(3);
+    expect(result.credentialsImported).toBe(3);
+    expect(result.filesBackedUp.length).toBe(3);
+
+    // Verify all three credentials are in vault
+    const vaultCredentials = vault.list();
+    expect(vaultCredentials.length).toBe(3);
+  });
+
+  it('handles missing agents directory gracefully', async () => {
+    const key = generateMasterKey();
+    const vault = await createVault(key, tempVaultPath);
+
+    // tempOpenclawDir doesn't exist
+    const result = await migrateCredentials(tempOpenclawDir, vault);
+
+    expect(result.profilesProcessed).toBe(0);
+    expect(result.credentialsImported).toBe(0);
+    expect(result.errors.length).toBe(0);
+  });
+
+  it('preserves profile metadata in rewritten file', async () => {
+    const tempDir = join(__dirname, 'temp-metadata');
+    await mkdir(tempDir, { recursive: true });
+
+    const authProfilesPath = join(tempDir, 'auth-profiles.json');
+    const authProfiles = {
+      version: 1,
+      profiles: {
+        'github:default': {
+          type: 'oauth_token',
+          provider: 'github',
+          key: 'ghp_testtoken1234567890abcdefghijklmnop',
+        },
+      },
+    };
+
+    await writeFile(authProfilesPath, JSON.stringify(authProfiles, null, 2));
+
+    const key = generateMasterKey();
+    const vault = await createVault(key, tempVaultPath);
+
+    await migrateCredentialsFromFile(authProfilesPath, vault);
+
+    const rewritten = JSON.parse(await readFile(authProfilesPath, 'utf8'));
+
+    // Verify type and provider are preserved
+    expect(rewritten.profiles['github:default'].type).toBe('oauth_token');
+    expect(rewritten.profiles['github:default'].provider).toBe('github');
+    expect(rewritten.version).toBe(1);
+
+    await rm(tempDir, { recursive: true });
   });
 });

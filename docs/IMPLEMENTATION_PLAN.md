@@ -110,3 +110,15 @@ Each task has: what to build, acceptance test, CoVe verification.
   - Verify: process test payment on devnet
 - [ ] FROST 2-of-2 threshold signing
   - Verify: key generation, partial sign, combine, verify signature
+
+## Day 1 Fix: Real OpenClaw Integration
+- [ ] packages/scanner — scanCredentials() for .json .env .yaml .txt files detecting patterns: /sk-[a-zA-Z0-9]{20,}/, /AIza[a-zA-Z0-9_-]{35}/, /sk-or-v1-[a-f0-9]{64}/, /ghp_[a-zA-Z0-9]{36}/, /xoxb-[0-9-]+/, /AKIA[A-Z0-9]{16}/
+  - Verify: scan fixture .json with plaintext keys, all detected with file+line+masked value
+- [ ] packages/scanner — scanDirectory() runs credential scan on non-ts/js files alongside AST scan
+  - Verify: directory with both .ts and .json files, both scanned, findings combined
+- [ ] packages/migrate — migrateCredentials() reads auth-profiles.json from ~/.openclaw/agents/*/agent/, imports keys to vault, rewrites with "openpaw:vault:<id>" references, backs up to .bak
+  - Verify: create fixture auth-profiles.json with real key format, migrate, verify .bak exists, verify rewritten file has vault references, verify vault contains imported credentials
+- [ ] packages/cli — migrate command calls migrateCredentials() after workspace copy
+  - Verify: openpaw migrate --from openclaw processes auth-profiles.json
+- [ ] packages/cli — scan command runs credential scanner on all file types
+  - Verify: openpaw scan on directory with .json containing API keys reports findings

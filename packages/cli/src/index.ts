@@ -2,8 +2,8 @@
 import { Command } from 'commander';
 import { createVault, generateMasterKey, encrypt } from '@openpaw/vault';
 import { detectAgents, formatDetectResultAsJson } from '@openpaw/detect';
-import { scanDirectory, type Severity } from '@openpaw/scanner';
-import { copyWorkspaceFiles, encryptSession, translateConfig, type MigrationSource, MigrationSourceSchema } from '@openpaw/migrate';
+import { scanDirectory, type Severity, type CredentialFinding } from '@openpaw/scanner';
+import { copyWorkspaceFiles, encryptSession, translateConfig, migrateCredentials, type MigrationSource, MigrationSourceSchema } from '@openpaw/migrate';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -237,11 +237,25 @@ program
       console.log(`Scanning ${path} for security issues...`);
       const result = await scanDirectory(path);
 
+      const totalIssues = result.findings.length + result.credentialFindings.length;
+
       if (options.json) {
         console.log(JSON.stringify(result, null, 2));
       } else {
         console.log(`\nScanned ${result.scannedFiles} files at ${result.scannedAt.toISOString()}`);
-        console.log(`Found ${result.findings.length} issue(s)\n`);
+        console.log(`Found ${totalIssues} issue(s) (${result.findings.length} code, ${result.credentialFindings.length} credential)\n`);
+
+        // Show credential findings first (always CRITICAL)
+        if (result.credentialFindings.length > 0) {
+          console.log(`[CREDENTIAL] (${result.credentialFindings.length} exposed key(s))`);
+          for (const finding of result.credentialFindings) {
+            console.log(`  ${finding.file}:${finding.line}:${finding.column}`);
+            console.log(`    Type: ${finding.type}`);
+            console.log(`    Value: ${finding.maskedValue}`);
+            console.log(`    ${finding.message}`);
+          }
+          console.log();
+        }
 
         if (result.findings.length > 0) {
           // Group by severity
@@ -283,8 +297,9 @@ program
   .requiredOption('--from <framework>', 'Source framework (openclaw, cline, cursor, windsurf)')
   .option('--source <path>', 'Source directory', '.')
   .option('--dest <path>', 'Destination directory', join(homedir(), '.openpaw', 'migrated'))
+  .option('--openclaw-dir <path>', 'OpenClaw config directory', join(homedir(), '.openclaw'))
   .option('--json', 'Output as JSON')
-  .action(async (options: { from: string; source: string; dest: string; json?: boolean }) => {
+  .action(async (options: { from: string; source: string; dest: string; openclawDir: string; json?: boolean }) => {
     try {
       // Validate source framework
       const parseResult = MigrationSourceSchema.safeParse(options.from);
@@ -338,12 +353,37 @@ program
         console.log('   No config file found');
       }
 
+      // Step 4: Migrate credentials from OpenClaw auth-profiles.json (for openclaw framework)
+      let credentialsMigrated = 0;
+      if (framework === 'openclaw') {
+        console.log('\n4. Migrating credentials from OpenClaw auth-profiles.json...');
+        const vault = await createVault(key, VAULT_FILE);
+        const credResult = await migrateCredentials(options.openclawDir, vault);
+
+        if (credResult.credentialsImported > 0) {
+          console.log(`   Imported ${credResult.credentialsImported} credential(s) to vault`);
+          console.log(`   Backed up ${credResult.filesBackedUp.length} file(s)`);
+          credentialsMigrated = credResult.credentialsImported;
+        } else if (credResult.profilesProcessed === 0) {
+          console.log('   No auth-profiles.json files found');
+        } else {
+          console.log('   All credentials already migrated');
+        }
+
+        if (credResult.errors.length > 0) {
+          for (const error of credResult.errors) {
+            console.log(`   Warning: ${error}`);
+          }
+        }
+      }
+
       const result = {
         success: true,
         framework,
         source: options.source,
         destination: options.dest,
         copiedFiles: copiedFiles.length,
+        credentialsMigrated,
       };
 
       if (options.json) {

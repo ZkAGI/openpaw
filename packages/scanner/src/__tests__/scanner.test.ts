@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { scanSource, scanFile, scanDirectory, quarantine, restore } from '../index.js';
+import { scanSource, scanFile, scanDirectory, quarantine, restore, scanCredentials, scanCredentialsSource, CREDENTIAL_PATTERNS } from '../index.js';
 import { readFile, writeFile, mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -150,20 +150,143 @@ describe('Scanner - File Operations', () => {
     expect(result.scannedAt).toBeInstanceOf(Date);
   });
 
-  it('skips non-JS/TS files', async () => {
+  it('scans JS/TS files for code issues and config files for credentials', async () => {
     const tempDir = join(__dirname, 'temp-scan-test');
     await mkdir(tempDir, { recursive: true });
 
     // Create test files
     await writeFile(join(tempDir, 'test.ts'), 'eval("code")');
-    await writeFile(join(tempDir, 'readme.md'), '# README');
-    await writeFile(join(tempDir, 'data.json'), '{}');
+    await writeFile(join(tempDir, 'readme.md'), '# README'); // .md not scanned
+    await writeFile(join(tempDir, 'data.json'), '{"key": "sk-test12345678901234567890"}'); // .json scanned for credentials
 
     const result = await scanDirectory(tempDir);
 
-    expect(result.scannedFiles).toBe(1); // Only test.ts
+    // test.ts (code scan) + data.json (credential scan) = 2 files
+    expect(result.scannedFiles).toBe(2);
+    expect(result.findings.length).toBeGreaterThan(0); // eval() from test.ts
+    expect(result.credentialFindings.length).toBeGreaterThan(0); // API key from data.json
 
     await rm(tempDir, { recursive: true });
+  });
+});
+
+describe('Scanner - Credential Detection', () => {
+  it('detects OpenAI API keys', () => {
+    const source = '{"api_key": "sk-abcdefghijklmnopqrstuvwxyz123456"}';
+    const findings = scanCredentialsSource(source, 'test.json');
+
+    expect(findings.length).toBe(1);
+    expect(findings[0].type).toBe('openai');
+    expect(findings[0].severity).toBe('CRITICAL');
+    expect(findings[0].maskedValue).toContain('*');
+    expect(findings[0].maskedValue).not.toContain('sk-abcdefghijklmnopqrstuvwxyz123456');
+  });
+
+  it('detects Google API keys', () => {
+    const source = 'GOOGLE_KEY=AIzaSyB-1234567890abcdefghijklmnopqrstuvwx';
+    const findings = scanCredentialsSource(source, 'test.env');
+
+    expect(findings.length).toBe(1);
+    expect(findings[0].type).toBe('google');
+    expect(findings[0].severity).toBe('CRITICAL');
+  });
+
+  it('detects OpenRouter API keys', () => {
+    const source = 'key=sk-or-v1-abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789';
+    const findings = scanCredentialsSource(source, 'test.yaml');
+
+    expect(findings.length).toBe(1);
+    expect(findings[0].type).toBe('openrouter');
+    expect(findings[0].severity).toBe('CRITICAL');
+  });
+
+  it('detects GitHub tokens', () => {
+    const source = 'GITHUB_TOKEN=ghp_abcdefghijklmnopqrstuvwxyz1234567890';
+    const findings = scanCredentialsSource(source, 'test.env');
+
+    expect(findings.length).toBe(1);
+    expect(findings[0].type).toBe('github');
+    expect(findings[0].severity).toBe('CRITICAL');
+  });
+
+  it('detects Slack bot tokens', () => {
+    // Build token dynamically to avoid GitHub secret scanner false positive
+    const prefix = 'xoxb';
+    const source = `slack: ${prefix}-111111111-222222222-testtoken00001`;
+    const findings = scanCredentialsSource(source, 'test.yaml');
+
+    expect(findings.length).toBe(1);
+    expect(findings[0].type).toBe('slack');
+    expect(findings[0].severity).toBe('CRITICAL');
+  });
+
+  it('detects AWS access keys', () => {
+    const source = 'AWS_ACCESS_KEY_ID=AKIAIOSFODNN7EXAMPLE';
+    const findings = scanCredentialsSource(source, 'test.env');
+
+    expect(findings.length).toBe(1);
+    expect(findings[0].type).toBe('aws');
+    expect(findings[0].severity).toBe('CRITICAL');
+  });
+
+  it('scans fixture JSON file with multiple credentials', async () => {
+    const findings = await scanCredentials(join(fixturesDir, 'credentials.json'));
+
+    // Should detect: openai, google, openrouter, github, aws (slack tested inline to avoid GitHub scanner)
+    expect(findings.length).toBe(5);
+
+    const types = findings.map(f => f.type).sort();
+    expect(types).toContain('openai');
+    expect(types).toContain('google');
+    expect(types).toContain('openrouter');
+    expect(types).toContain('github');
+    expect(types).toContain('aws');
+
+    // All should have masked values
+    for (const finding of findings) {
+      expect(finding.maskedValue).toContain('*');
+      expect(finding.line).toBeGreaterThan(0);
+    }
+  });
+
+  it('scans fixture .env file with credentials', async () => {
+    const findings = await scanCredentials(join(fixturesDir, 'credentials.env'));
+
+    // Should detect: openai, google, github, aws
+    expect(findings.length).toBe(4);
+
+    const types = findings.map(f => f.type).sort();
+    expect(types).toContain('openai');
+    expect(types).toContain('google');
+    expect(types).toContain('github');
+    expect(types).toContain('aws');
+  });
+
+  it('includes correct line numbers for multi-line files', async () => {
+    const findings = await scanCredentials(join(fixturesDir, 'credentials.json'));
+
+    // Verify line numbers are sequential (each key on different line)
+    const lines = findings.map(f => f.line).sort((a, b) => a - b);
+    expect(lines[0]).toBeGreaterThan(0);
+
+    // Each finding should be on a different line
+    const uniqueLines = new Set(lines);
+    expect(uniqueLines.size).toBe(findings.length);
+  });
+
+  it('masks values correctly', () => {
+    // Test OpenAI masking
+    const openaiFindings = scanCredentialsSource('{"key": "sk-abc123xyz456def789ghi012jkl345mno678"}', 'test.json');
+    expect(openaiFindings[0].maskedValue.startsWith('sk-abc1')).toBe(true);
+    expect(openaiFindings[0].maskedValue.endsWith('o678')).toBe(true);
+    expect(openaiFindings[0].maskedValue).toContain('*');
+  });
+
+  it('does not report false positives for short strings', () => {
+    const source = '{"key": "sk-short"}'; // Too short to be a real OpenAI key
+    const findings = scanCredentialsSource(source, 'test.json');
+
+    expect(findings.length).toBe(0);
   });
 });
 
