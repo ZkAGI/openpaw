@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { createVault, generateMasterKey, deriveKeyFromPassword } from '@openpaw/vault';
+import { createVault, generateMasterKey, encrypt } from '@openpaw/vault';
 import { detectAgents, formatDetectResultAsJson } from '@openpaw/detect';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { scanDirectory, type Severity } from '@openpaw/scanner';
+import { copyWorkspaceFiles, encryptSession, translateConfig, type MigrationSource, MigrationSourceSchema } from '@openpaw/migrate';
+import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
@@ -224,24 +226,136 @@ program
     }
   });
 
-// Scan command (placeholder - delegates to scanner package)
+// Scan command - uses scanner package
 program
   .command('scan')
   .description('Scan directory for security issues')
   .argument('[path]', 'Directory to scan', '.')
-  .action(async (path: string) => {
-    console.log(`Scanning ${path} for security issues...`);
-    console.log('(Scanner package not yet implemented)');
+  .option('--json', 'Output as JSON')
+  .action(async (path: string, options: { json?: boolean }) => {
+    try {
+      console.log(`Scanning ${path} for security issues...`);
+      const result = await scanDirectory(path);
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log(`\nScanned ${result.scannedFiles} files at ${result.scannedAt.toISOString()}`);
+        console.log(`Found ${result.findings.length} issue(s)\n`);
+
+        if (result.findings.length > 0) {
+          // Group by severity
+          const bySeverity: Record<Severity, typeof result.findings> = {
+            CRITICAL: [],
+            HIGH: [],
+            MEDIUM: [],
+            LOW: [],
+          };
+
+          for (const finding of result.findings) {
+            bySeverity[finding.severity].push(finding);
+          }
+
+          for (const severity of ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW'] as const) {
+            const findings = bySeverity[severity];
+            if (findings.length > 0) {
+              console.log(`[${severity}] (${findings.length} issue(s))`);
+              for (const finding of findings) {
+                console.log(`  ${finding.file}:${finding.line}:${finding.column}`);
+                console.log(`    Rule: ${finding.rule}`);
+                console.log(`    ${finding.message}`);
+              }
+              console.log();
+            }
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
   });
 
-// Migrate command (placeholder - delegates to migrate package)
+// Migrate command - uses migrate package
 program
   .command('migrate')
   .description('Migrate from another agent framework')
-  .option('--from <framework>', 'Source framework (e.g., openclaw)')
-  .action(async (options: { from?: string }) => {
-    console.log(`Migration from ${options.from ?? 'unknown'} framework...`);
-    console.log('(Migrate package not yet implemented)');
+  .requiredOption('--from <framework>', 'Source framework (openclaw, cline, cursor, windsurf)')
+  .option('--source <path>', 'Source directory', '.')
+  .option('--dest <path>', 'Destination directory', join(homedir(), '.openpaw', 'migrated'))
+  .option('--json', 'Output as JSON')
+  .action(async (options: { from: string; source: string; dest: string; json?: boolean }) => {
+    try {
+      // Validate source framework
+      const parseResult = MigrationSourceSchema.safeParse(options.from);
+      if (!parseResult.success) {
+        console.error(`Error: Invalid framework "${options.from}". Must be one of: openclaw, cline, cursor, windsurf`);
+        process.exit(1);
+      }
+      const framework = parseResult.data;
+
+      console.log(`Migrating from ${framework}...`);
+
+      // Step 1: Copy workspace files
+      console.log(`\n1. Copying workspace files from ${options.source}...`);
+      const copiedFiles = await copyWorkspaceFiles(options.source, options.dest);
+      console.log(`   Copied ${copiedFiles.length} file(s)`);
+
+      // Step 2: Encrypt session files
+      console.log('\n2. Encrypting session files...');
+      const key = await getMasterKey();
+      const sessionDir = join(options.source, 'sessions');
+      try {
+        const sessionFiles = await readdir(sessionDir);
+        const jsonlFiles = sessionFiles.filter(f => f.endsWith('.jsonl'));
+        for (const file of jsonlFiles) {
+          const sourcePath = join(sessionDir, file);
+          const destPath = join(options.dest, 'sessions', `${file}.enc`);
+          await mkdir(join(options.dest, 'sessions'), { recursive: true });
+          const content = await readFile(sourcePath, 'utf8');
+          const encrypted = encrypt(content, key);
+          await writeFile(destPath, encrypted);
+          console.log(`   Encrypted: ${file}`);
+        }
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+        console.log('   No session files found');
+      }
+
+      // Step 3: Translate config
+      console.log('\n3. Translating configuration...');
+      const configPath = join(options.source, `${framework}.json`);
+      const destConfigPath = join(options.dest, 'openpaw.json');
+      try {
+        await translateConfig(configPath, destConfigPath, framework);
+        console.log(`   Wrote: openpaw.json`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+          throw error;
+        }
+        console.log('   No config file found');
+      }
+
+      const result = {
+        success: true,
+        framework,
+        source: options.source,
+        destination: options.dest,
+        copiedFiles: copiedFiles.length,
+      };
+
+      if (options.json) {
+        console.log(JSON.stringify(result, null, 2));
+      } else {
+        console.log('\nMigration complete!');
+        console.log(`Destination: ${options.dest}`);
+      }
+    } catch (error) {
+      console.error(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
   });
 
 // Start command (placeholder)

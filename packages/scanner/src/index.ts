@@ -94,10 +94,11 @@ const SECURITY_RULES: SecurityRule[] = [
     check: (node) => {
       if (node.type === 'CallExpression' && node.callee.type === 'Identifier' && node.callee.name === 'require') {
         // Check if argument is not a string literal (dynamic)
-        if (node.arguments.length > 0) {
-          const arg = node.arguments[0];
-          return arg.type !== 'Literal' || typeof arg.value !== 'string';
+        const arg = node.arguments[0];
+        if (arg && arg.type === 'Literal' && 'value' in arg) {
+          return typeof arg.value !== 'string';
         }
+        return node.arguments.length > 0;
       }
       return false;
     },
@@ -115,12 +116,10 @@ const SECURITY_RULES: SecurityRule[] = [
         if (obj.type === 'Identifier' && obj.name === 'fs' &&
             prop.type === 'Identifier' && (prop.name === 'writeFile' || prop.name === 'writeFileSync')) {
           // Check if path argument contains sensitive paths
-          if (node.arguments.length > 0) {
-            const pathArg = node.arguments[0];
-            if (pathArg.type === 'Literal' && typeof pathArg.value === 'string') {
-              const sensitivePaths = ['/etc/', '~/.ssh/', '/root/', '~/.aws/', '/System/', '/Windows/'];
-              return sensitivePaths.some(path => pathArg.value!.toString().includes(path));
-            }
+          const pathArg = node.arguments[0];
+          if (pathArg && pathArg.type === 'Literal' && 'value' in pathArg && typeof pathArg.value === 'string') {
+            const sensitivePaths = ['/etc/', '~/.ssh/', '/root/', '~/.aws/', '/System/', '/Windows/'];
+            return sensitivePaths.some(path => pathArg.value.includes(path));
           }
         }
       }

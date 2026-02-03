@@ -29,7 +29,7 @@ export type JsonRpcResponse = z.infer<typeof JsonRpcResponseSchema>;
 
 const TOKEN_PATTERNS = [
   /sk-[a-zA-Z0-9]{20,}/g,
-  /ghp_[a-zA-Z0-9]{36}/g,
+  /ghp_[a-zA-Z0-9]{35,}/g,
   /xox[baprs]-[a-zA-Z0-9-]+/g,
   /api_[a-zA-Z0-9_-]{20,}/gi,
   /Bearer\s+[a-zA-Z0-9._-]+/g,
@@ -86,9 +86,11 @@ export async function injectCredentials(
     let result = value;
     for (const match of matches) {
       const refId = match[1];
-      const credential = await store.get(refId);
-      if (credential) {
-        result = result.replace(match[0], credential);
+      if (refId) {
+        const credential = await store.get(refId);
+        if (credential) {
+          result = result.replace(match[0], credential);
+        }
       }
     }
     return result;
@@ -161,7 +163,7 @@ export function createMcpHandler(config: McpServerConfig) {
       }
 
       if (req.method === 'tools/call') {
-        const toolName = (req.params?.name as string) ?? '';
+        const toolName = (req.params?.['name'] as string) ?? '';
 
         if (config.policyConfig.blockedTools.includes(toolName)) {
           await logAudit(config.auditLogPath, {

@@ -178,10 +178,10 @@ describe('Scanner - Quarantine System', () => {
   afterEach(async () => {
     try {
       await rm(testFile, { force: true });
-    } catch {}
+    } catch { /* Ignore cleanup errors */ }
     try {
       await rm(quarantineDir, { recursive: true, force: true });
-    } catch {}
+    } catch { /* Ignore cleanup errors */ }
   });
 
   it('quarantines a file and creates lock', async () => {

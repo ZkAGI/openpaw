@@ -45,16 +45,20 @@ describe('Gateway', () => {
       expect(retrieved?.metadata.test).toBe(true);
     });
 
-    it('should update session metadata', () => {
+    it('should update session metadata', async () => {
       const manager = new SessionManager(testDir, encryptionKey);
       const session = manager.create({ count: 0 });
+      const originalLastActivity = session.lastActivity;
+
+      // Small delay to ensure different timestamp
+      await new Promise((resolve) => setTimeout(resolve, 10));
 
       manager.update(session.id, { count: 1, newField: 'value' });
 
       const updated = manager.get(session.id);
       expect(updated?.metadata.count).toBe(1);
       expect(updated?.metadata.newField).toBe('value');
-      expect(updated?.lastActivity).not.toBe(session.lastActivity);
+      expect(updated?.lastActivity).not.toBe(originalLastActivity);
     });
 
     it('should persist sessions to disk', async () => {

@@ -135,7 +135,7 @@ describe('Credential ID Generation', () => {
   it('should generate ID in correct format', () => {
     const id = generateCredentialId('openai', 'api_key');
 
-    expect(id).toMatch(/^cred_openai_api_key_[a-f0-9]{4}$/);
+    expect(id).toMatch(/^cred_openai_api_key_[a-f0-9]{8}$/);
   });
 
   it('should generate unique IDs', () => {
@@ -147,13 +147,13 @@ describe('Credential ID Generation', () => {
   });
 
   it('should parse ID back to components', () => {
-    const id = 'cred_github_api_key_a1b2';
+    const id = 'cred_github_api_key_a1b2c3d4';
     const parsed = parseCredentialId(id);
 
     expect(parsed).not.toBeNull();
     expect(parsed!.service).toBe('github');
     expect(parsed!.type).toBe('api_key');
-    expect(parsed!.hash).toBe('a1b2');
+    expect(parsed!.hash).toBe('a1b2c3d4');
   });
 
   it('should return null for invalid ID format', () => {
@@ -170,7 +170,7 @@ describe('Credential ID Generation', () => {
     expect(parsed).not.toBeNull();
     expect(parsed!.service).toBe('anthropic');
     expect(parsed!.type).toBe('oauth_token');
-    expect(parsed!.hash).toMatch(/^[a-f0-9]{4}$/);
+    expect(parsed!.hash).toMatch(/^[a-f0-9]{8}$/);
   });
 });
 
@@ -294,7 +294,7 @@ describe('Vault Class', () => {
 
     const credential = await vault.import('openai', 'api_key', 'sk-test-12345');
 
-    expect(credential.id).toMatch(/^cred_openai_api_key_[a-f0-9]{4}$/);
+    expect(credential.id).toMatch(/^cred_openai_api_key_[a-f0-9]{8}$/);
     expect(credential.service).toBe('openai');
     expect(credential.type).toBe('api_key');
 

@@ -39,27 +39,27 @@ export interface EncryptionResult {
 }
 
 /**
- * Generate a credential reference ID in the format: cred_{service}_{type}_{first4charsOfHash}
+ * Generate a credential reference ID in the format: cred_{service}_{type}_{first8charsOfHash}
  */
 export function generateCredentialId(service: string, type: string): string {
   const random = randomBytes(8).toString('hex');
   const hash = createHash('sha256')
     .update(`${service}:${type}:${Date.now()}:${random}`)
     .digest('hex')
-    .slice(0, 4);
+    .slice(0, 8);
   return `cred_${service}_${type}_${hash}`;
 }
 
 /**
  * Parse a credential ID back into its components
- * Format: cred_{service}_{type}_{hash4}
+ * Format: cred_{service}_{type}_{hash8}
  * Note: service is alphanumeric, type may contain underscore (e.g., api_key)
  */
 export function parseCredentialId(id: string): { service: string; type: string; hash: string } | null {
-  // Match: cred_<service>_<type>_<4-char-hex>
+  // Match: cred_<service>_<type>_<8-char-hex>
   // The type can contain underscores (api_key, oauth_token), so we match greedily
-  // then look for _<4-hex-chars> at the end
-  const match = id.match(/^cred_([a-zA-Z0-9]+)_(.+)_([a-f0-9]{4})$/);
+  // then look for _<8-hex-chars> at the end
+  const match = id.match(/^cred_([a-zA-Z0-9]+)_(.+)_([a-f0-9]{8})$/);
   if (!match || !match[1] || !match[2] || !match[3]) return null;
   return {
     service: match[1],

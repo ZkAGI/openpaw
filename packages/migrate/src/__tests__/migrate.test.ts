@@ -17,7 +17,7 @@ describe('Migrate - Workspace Copy', () => {
   afterEach(async () => {
     try {
       await rm(destDir, { recursive: true, force: true });
-    } catch {}
+    } catch { /* Ignore cleanup errors */ }
   });
 
   it('copies all workspace files from source to destination', async () => {
@@ -85,7 +85,7 @@ describe('Migrate - Session Encryption', () => {
   afterEach(async () => {
     try {
       await rm(tempEncrypted, { force: true });
-    } catch {}
+    } catch { /* Ignore cleanup errors */ }
   });
 
   it('encrypts session file with AES-256-GCM', async () => {
@@ -167,7 +167,7 @@ describe('Migrate - Config Translation', () => {
   afterEach(async () => {
     try {
       await rm(destConfig, { force: true });
-    } catch {}
+    } catch { /* Ignore cleanup errors */ }
   });
 
   it('translates openclaw.json to openpaw.json', async () => {
