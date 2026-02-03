@@ -1,5 +1,5 @@
 {
-  "name": "@zkagi/openpaw",
+  "name": "@sahu-01/openpaw",
   "version": "1.0.0",
   "description": "OpenPaw CLI - Security-first wrapper for AI agents",
   "type": "module",
@@ -8,7 +8,9 @@
   "bin": {
     "openpaw": "dist/index.js"
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "publishConfig": {
     "access": "public"
   },
@@ -24,10 +26,10 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
-    "@zkagi/openpaw-detect": "workspace:*",
-    "@zkagi/openpaw-vault": "workspace:*",
-    "@zkagi/openpaw-scanner": "workspace:*",
-    "@zkagi/openpaw-migrate": "workspace:*",
+    "@sahu-01/openpaw-detect": "workspace:*",
+    "@sahu-01/openpaw-vault": "workspace:*",
+    "@sahu-01/openpaw-scanner": "workspace:*",
+    "@sahu-01/openpaw-migrate": "workspace:*",
     "tsup": "^8.0.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0",
