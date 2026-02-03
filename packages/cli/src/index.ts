@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 import { Command } from 'commander';
 import { createVault, generateMasterKey, encrypt } from '@zkagi/openpaw-vault';
 import { detectAgents, formatDetectResultAsJson } from '@zkagi/openpaw-detect';

@@ -1,8 +1,7 @@
 {
   "name": "@sahu-01/openpaw",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OpenPaw CLI - Security-first wrapper for AI agents",
-  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "bin": {
