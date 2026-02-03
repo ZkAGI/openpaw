@@ -515,8 +515,8 @@ export async function startGateway(config: GatewayStartConfig = {}): Promise<Gat
 
   // Spawn OpenClaw if binary found
   if (openclawBinary) {
-    console.log(`Starting OpenClaw: ${openclawBinary}`);
-    openclawProcess = spawnOpenClaw(openclawBinary);
+    console.log(`Starting OpenClaw: ${openclawBinary} gateway`);
+    openclawProcess = spawnOpenClaw(openclawBinary, ['gateway']);
 
     openclawProcess.on('exit', async (code) => {
       console.log(`OpenClaw exited with code ${code}`);
@@ -531,8 +531,8 @@ export async function startGateway(config: GatewayStartConfig = {}): Promise<Gat
     });
   } else {
     // Try npx openclaw
-    console.log('Starting OpenClaw via npx...');
-    openclawProcess = spawnOpenClaw('npx', ['openclaw']);
+    console.log('Starting OpenClaw via npx: openclaw gateway');
+    openclawProcess = spawnOpenClaw('npx', ['openclaw', 'gateway']);
 
     openclawProcess.on('exit', async (code) => {
       console.log(`OpenClaw exited with code ${code}`);
