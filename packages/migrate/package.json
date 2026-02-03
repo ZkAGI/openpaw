@@ -1,10 +1,14 @@
 {
-  "name": "@openpaw/migrate",
+  "name": "@zkagi/openpaw-migrate",
   "version": "1.0.0",
   "description": "Migration tools from other agent frameworks",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "test": "vitest run",
@@ -13,7 +17,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@openpaw/vault": "workspace:*",
+    "@zkagi/openpaw-vault": "1.0.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {

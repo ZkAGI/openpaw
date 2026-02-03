@@ -1,17 +1,21 @@
 {
-  "name": "@openpaw/gateway",
+  "name": "@zkagi/openpaw-gateway",
   "version": "1.0.0",
   "description": "WebSocket gateway with session management",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@openpaw/vault": "workspace:*",
+    "@zkagi/openpaw-vault": "1.0.0",
     "ws": "^8.16.0",
     "zod": "^3.22.0"
   },

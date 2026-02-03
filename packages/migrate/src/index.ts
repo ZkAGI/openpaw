@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { Vault } from '@openpaw/vault';
+import type { Vault } from '@zkagi/openpaw-vault';
 
 export const MigrationSourceSchema = z.enum(['openclaw', 'cline', 'cursor', 'windsurf']);
 export type MigrationSource = z.infer<typeof MigrationSourceSchema>;
@@ -56,7 +56,7 @@ export async function encryptSession(
   key: Buffer
 ): Promise<string> {
   const { readFile, writeFile } = await import('node:fs/promises');
-  const { encrypt } = await import('@openpaw/vault');
+  const { encrypt } = await import('@zkagi/openpaw-vault');
   const content = await readFile(sessionPath, 'utf8');
   const encrypted = encrypt(content, key);
   const encryptedPath = `${sessionPath}.enc`;

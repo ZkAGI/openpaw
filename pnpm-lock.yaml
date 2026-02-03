@@ -120,22 +120,25 @@ importers:
 
   packages/cli:
     dependencies:
-      '@openpaw/detect':
-        specifier: workspace:*
-        version: link:../detect
-      '@openpaw/migrate':
-        specifier: workspace:*
-        version: link:../migrate
-      '@openpaw/scanner':
-        specifier: workspace:*
-        version: link:../scanner
-      '@openpaw/vault':
-        specifier: workspace:*
-        version: link:../vault
       commander:
         specifier: ^12.0.0
         version: 12.1.0
+      zod:
+        specifier: ^3.22.0
+        version: 3.25.76
     devDependencies:
+      '@zkagi/openpaw-detect':
+        specifier: workspace:*
+        version: link:../detect
+      '@zkagi/openpaw-migrate':
+        specifier: workspace:*
+        version: link:../migrate
+      '@zkagi/openpaw-scanner':
+        specifier: workspace:*
+        version: link:../scanner
+      '@zkagi/openpaw-vault':
+        specifier: workspace:*
+        version: link:../vault
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)
@@ -180,9 +183,6 @@ importers:
 
   packages/gateway:
     dependencies:
-      '@openpaw/vault':
-        specifier: workspace:*
-        version: link:../vault
       ws:
         specifier: ^8.16.0
         version: 8.19.0(bufferutil@4.1.0)(utf-8-validate@5.0.10)
@@ -196,6 +196,9 @@ importers:
       '@types/ws':
         specifier: ^8.5.10
         version: 8.18.1
+      '@zkagi/openpaw-vault':
+        specifier: workspace:*
+        version: link:../vault
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)
@@ -208,9 +211,6 @@ importers:
 
   packages/mcp-proxy:
     dependencies:
-      '@openpaw/vault':
-        specifier: workspace:*
-        version: link:../vault
       zod:
         specifier: ^3.22.0
         version: 3.25.76
@@ -218,6 +218,9 @@ importers:
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.30
+      '@zkagi/openpaw-vault':
+        specifier: workspace:*
+        version: link:../vault
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)
@@ -233,13 +236,13 @@ importers:
 
   packages/migrate:
     dependencies:
-      '@openpaw/vault':
-        specifier: workspace:*
-        version: link:../vault
       zod:
         specifier: ^3.22.0
         version: 3.25.76
     devDependencies:
+      '@zkagi/openpaw-vault':
+        specifier: workspace:*
+        version: link:../vault
       tsup:
         specifier: ^8.0.0
         version: 8.5.1(postcss@8.5.6)(tsx@4.21.0)(typescript@5.9.3)

@@ -1,17 +1,21 @@
 {
-  "name": "@openpaw/mcp-proxy",
+  "name": "@zkagi/openpaw-mcp-proxy",
   "version": "1.0.0",
   "description": "MCP proxy with credential injection and response redaction",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc --noEmit",
     "clean": "rm -rf dist"
   },
   "dependencies": {
-    "@openpaw/vault": "workspace:*",
+    "@zkagi/openpaw-vault": "1.0.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {

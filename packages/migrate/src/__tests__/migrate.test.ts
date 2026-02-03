@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { decrypt, createVault, generateMasterKey } from '@openpaw/vault';
+import { decrypt, createVault, generateMasterKey } from '@zkagi/openpaw-vault';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);

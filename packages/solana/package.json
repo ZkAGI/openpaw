@@ -1,10 +1,14 @@
 {
-  "name": "@openpaw/solana",
+  "name": "@zkagi/openpaw-solana",
   "version": "1.0.0",
   "description": "Solana audit trail and on-chain verification",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc --noEmit",

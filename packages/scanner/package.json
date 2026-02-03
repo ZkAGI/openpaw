@@ -1,10 +1,14 @@
 {
-  "name": "@openpaw/scanner",
+  "name": "@zkagi/openpaw-scanner",
   "version": "1.0.0",
   "description": "AST-based security scanner for TypeScript/JavaScript",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "test": "vitest run",

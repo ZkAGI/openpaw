@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { z } from 'zod';
-import { encrypt, decrypt } from '@openpaw/vault';
+import { encrypt, decrypt } from '@zkagi/openpaw-vault';
 
 export const DEFAULT_PORT = 18789;
 

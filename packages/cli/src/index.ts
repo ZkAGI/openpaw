@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { createVault, generateMasterKey, encrypt } from '@openpaw/vault';
-import { detectAgents, formatDetectResultAsJson } from '@openpaw/detect';
-import { scanDirectory, type Severity, type CredentialFinding } from '@openpaw/scanner';
-import { copyWorkspaceFiles, encryptSession, translateConfig, migrateCredentials, type MigrationSource, MigrationSourceSchema } from '@openpaw/migrate';
+import { createVault, generateMasterKey, encrypt } from '@zkagi/openpaw-vault';
+import { detectAgents, formatDetectResultAsJson } from '@zkagi/openpaw-detect';
+import { scanDirectory, type Severity, type CredentialFinding } from '@zkagi/openpaw-scanner';
+import { copyWorkspaceFiles, encryptSession, translateConfig, migrateCredentials, type MigrationSource, MigrationSourceSchema } from '@zkagi/openpaw-migrate';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';

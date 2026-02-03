@@ -1,10 +1,14 @@
 {
-  "name": "@openpaw/zk-prover",
+  "name": "@zkagi/openpaw-zk-prover",
   "version": "1.0.0",
   "description": "Circom + Groth16 ZK proof generation",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts",
     "typecheck": "tsc --noEmit",
