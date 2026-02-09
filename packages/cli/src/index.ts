@@ -483,6 +483,186 @@ program
     }
   });
 
+// Channels command
+program
+  .command('channels')
+  .description('List configured channels and their status')
+  .option('--json', 'Output as JSON')
+  .action(async (options: { json?: boolean }) => {
+    try {
+      const openpawConfigPath = join(CONFIG_DIR, 'openpaw.json');
+
+      interface ChannelStatus {
+        name: string;
+        configured: boolean;
+        sessionExists: boolean;
+        status: 'ready' | 'not_configured' | 'missing_session';
+      }
+
+      const channels: ChannelStatus[] = [];
+
+      // Check WhatsApp
+      const waVaultDir = join(CONFIG_DIR, 'channels', 'whatsapp');
+      let whatsappConfigured = false;
+      let whatsappAccountId = 'default';
+
+      try {
+        if (existsSync(openpawConfigPath)) {
+          const configRaw = await readFile(openpawConfigPath, 'utf8');
+          const config = JSON.parse(configRaw);
+          if (config.channels?.whatsapp) {
+            whatsappConfigured = true;
+            whatsappAccountId = config.channels.whatsapp.accountId ?? 'default';
+          }
+        }
+      } catch {
+        // Config parse error, treat as not configured
+      }
+
+      const waVaultFile = join(waVaultDir, `${whatsappAccountId}.vault`);
+      const waSessionExists = existsSync(waVaultFile);
+
+      channels.push({
+        name: 'whatsapp',
+        configured: whatsappConfigured,
+        sessionExists: waSessionExists,
+        status: !whatsappConfigured ? 'not_configured'
+              : !waSessionExists ? 'missing_session'
+              : 'ready',
+      });
+
+      // Check Telegram (token-based, check vault)
+      let telegramConfigured = false;
+      try {
+        if (existsSync(openpawConfigPath)) {
+          const configRaw = await readFile(openpawConfigPath, 'utf8');
+          const config = JSON.parse(configRaw);
+          if (config.channels?.telegram) {
+            telegramConfigured = true;
+          }
+        }
+      } catch {
+        // Config parse error
+      }
+
+      // For Telegram, check if TELEGRAM_BOT_TOKEN credential exists in vault
+      let telegramTokenExists = false;
+      try {
+        const key = await getMasterKey();
+        const vault = await createVault(key, VAULT_FILE);
+        const creds = vault.list();
+        telegramTokenExists = creds.some(c => c.service === 'telegram' || c.id.includes('telegram'));
+      } catch {
+        // Vault not initialized
+      }
+
+      channels.push({
+        name: 'telegram',
+        configured: telegramConfigured,
+        sessionExists: telegramTokenExists,
+        status: !telegramConfigured ? 'not_configured'
+              : !telegramTokenExists ? 'missing_session'
+              : 'ready',
+      });
+
+      // Check Discord
+      let discordConfigured = false;
+      try {
+        if (existsSync(openpawConfigPath)) {
+          const configRaw = await readFile(openpawConfigPath, 'utf8');
+          const config = JSON.parse(configRaw);
+          if (config.channels?.discord) {
+            discordConfigured = true;
+          }
+        }
+      } catch {
+        // Config parse error
+      }
+
+      let discordTokenExists = false;
+      try {
+        const key = await getMasterKey();
+        const vault = await createVault(key, VAULT_FILE);
+        const creds = vault.list();
+        discordTokenExists = creds.some(c => c.service === 'discord' || c.id.includes('discord'));
+      } catch {
+        // Vault not initialized
+      }
+
+      channels.push({
+        name: 'discord',
+        configured: discordConfigured,
+        sessionExists: discordTokenExists,
+        status: !discordConfigured ? 'not_configured'
+              : !discordTokenExists ? 'missing_session'
+              : 'ready',
+      });
+
+      // Check Slack
+      let slackConfigured = false;
+      try {
+        if (existsSync(openpawConfigPath)) {
+          const configRaw = await readFile(openpawConfigPath, 'utf8');
+          const config = JSON.parse(configRaw);
+          if (config.channels?.slack) {
+            slackConfigured = true;
+          }
+        }
+      } catch {
+        // Config parse error
+      }
+
+      let slackTokenExists = false;
+      try {
+        const key = await getMasterKey();
+        const vault = await createVault(key, VAULT_FILE);
+        const creds = vault.list();
+        slackTokenExists = creds.some(c => c.service === 'slack' || c.id.includes('slack'));
+      } catch {
+        // Vault not initialized
+      }
+
+      channels.push({
+        name: 'slack',
+        configured: slackConfigured,
+        sessionExists: slackTokenExists,
+        status: !slackConfigured ? 'not_configured'
+              : !slackTokenExists ? 'missing_session'
+              : 'ready',
+      });
+
+      if (options.json) {
+        console.log(JSON.stringify({ channels }, null, 2));
+      } else {
+        console.log('Channel Status');
+        console.log('==============\n');
+
+        for (const channel of channels) {
+          const statusIcon = channel.status === 'ready' ? '[READY]'
+                           : channel.status === 'missing_session' ? '[NO SESSION]'
+                           : '[NOT CONFIGURED]';
+          console.log(`${statusIcon} ${channel.name}`);
+          if (channel.status === 'ready') {
+            console.log(`    Configured: Yes`);
+            console.log(`    Session/Token: Found`);
+          } else if (channel.status === 'missing_session') {
+            console.log(`    Configured: Yes`);
+            console.log(`    Session/Token: Missing`);
+            console.log(`    → Run: openpaw migrate --from openclaw (for WhatsApp)`);
+            console.log(`    → Or: openpaw vault import --service ${channel.name} --type api_key`);
+          } else {
+            console.log(`    Configured: No`);
+            console.log(`    → Add "${channel.name}" section to ~/.openpaw/openpaw.json`);
+          }
+          console.log();
+        }
+      }
+    } catch (error) {
+      console.error(`Error: ${(error as Error).message}`);
+      process.exit(1);
+    }
+  });
+
 // Doctor command
 program
   .command('doctor')

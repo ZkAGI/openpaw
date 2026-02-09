@@ -190,6 +190,7 @@ Hash commitments of every action are logged on Solana. Private but verifiable â€
 | `openpaw start` | Start the gateway + MCP proxy |
 | `openpaw stop` | Stop the gateway |
 | `openpaw status` | Show vault, scans, proofs, and budget status |
+| `openpaw channels` | List configured channels and their connection status |
 | `openpaw doctor` | Verify installation health |
 | `openpaw audit show [--day]` | Show audit log entries |
 | `openpaw budget set <amount>` | Set daily spending limit |
@@ -199,7 +200,7 @@ Hash commitments of every action are logged on Solana. Private but verifiable â€
 
 ## Configuration
 
-After migration, OpenPaw creates `openpaw.json` in your workspace:
+After migration, OpenPaw creates `openpaw.json` in `~/.openpaw/`:
 
 ```jsonc
 {
@@ -210,6 +211,24 @@ After migration, OpenPaw creates `openpaw.json` in your workspace:
   "vault": {
     "algorithm": "aes-256-gcm",
     "keyDerivation": "scrypt"
+  },
+  "channels": {
+    "whatsapp": {
+      "accountId": "default",
+      "selfChatMode": true,
+      "dmPolicy": "allowlist",
+      "allowFrom": ["+15551234567"],
+      "flushIntervalMs": 300000
+    },
+    "telegram": {
+      "botToken": "vault:cred_telegram_api_key_..."
+    },
+    "discord": {
+      "botToken": "vault:cred_discord_api_key_..."
+    },
+    "slack": {
+      "botToken": "vault:cred_slack_api_key_..."
+    }
   },
   "proxy": {
     "rateLimit": {
@@ -239,6 +258,38 @@ After migration, OpenPaw creates `openpaw.json` in your workspace:
 }
 ```
 
+### WhatsApp Channel Configuration
+
+WhatsApp uses the "tarball-at-rest" pattern for session security. Baileys session files are encrypted and only decrypted to RAM at runtime:
+
+```jsonc
+{
+  "channels": {
+    "whatsapp": {
+      // Account identifier (phone number or Baileys ID)
+      "accountId": "default",
+
+      // Only respond to messages from yourself (for testing)
+      "selfChatMode": true,
+
+      // DM policy: "allowlist" (only respond to specified numbers) or "open"
+      "dmPolicy": "allowlist",
+
+      // Phone numbers allowed to message (with country code)
+      "allowFrom": ["+15551234567", "+15559876543"],
+
+      // Session flush interval (5 min default, saves encrypted session to disk)
+      "flushIntervalMs": 300000
+    }
+  }
+}
+```
+
+**Session storage:**
+- Encrypted vault: `~/.openpaw/channels/whatsapp/<accountId>.vault`
+- Runtime (RAM only): `/tmp/openpaw-wa-<random>/` â€” wiped on shutdown
+- Signal handlers flush session on SIGTERM/SIGINT before exit
+
 ---
 
 ## Migration Guide
@@ -265,6 +316,7 @@ openpaw start
 - Translates `openclaw.json` â†’ `openpaw.json`
 - Encrypts session files (`session.jsonl` â†’ `session.jsonl.enc`)
 - Extracts credentials from `auth-profiles.json` into the encrypted vault
+- Migrates WhatsApp Baileys sessions to encrypted vault
 - Optionally wipes the original plaintext credentials (`--wipe`)
 
 **What migration does NOT do:**
