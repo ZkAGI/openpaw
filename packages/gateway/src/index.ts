@@ -239,6 +239,30 @@ export function createGateway(port: number = DEFAULT_PORT): WebSocketServer {
 // OpenPaw Gateway Start Command
 // ============================================================================
 
+// ── Channel Config Schemas ───────────────────────────────────────────
+
+export const WhatsAppChannelConfigSchema = z.object({
+  accountId: z.string().optional(),
+  selfChatMode: z.boolean().optional(),
+  dmPolicy: z.enum(['allowlist', 'open']).optional(),
+  allowFrom: z.array(z.string()).optional(),
+  flushIntervalMs: z.number().optional(),
+});
+
+export type WhatsAppChannelConfig = z.infer<typeof WhatsAppChannelConfigSchema>;
+
+export const ChannelsConfigSchema = z.object({
+  whatsapp: WhatsAppChannelConfigSchema.optional(),
+});
+
+export type ChannelsConfig = z.infer<typeof ChannelsConfigSchema>;
+
+export const OpenpawConfigSchema = z.object({
+  channels: ChannelsConfigSchema.optional(),
+});
+
+export type OpenpawConfig = z.infer<typeof OpenpawConfigSchema>;
+
 export interface GatewayStartConfig {
   port?: number;
   openclawDir?: string;
@@ -249,6 +273,7 @@ export interface GatewayStartResult {
   port: number;
   openclawProcess: ChildProcess | null;
   cleanup: () => Promise<void>;
+  whatsappAdapter?: unknown;
 }
 
 interface AuthProfile {
@@ -489,16 +514,95 @@ export async function startGateway(config: GatewayStartConfig = {}): Promise<Gat
 
   console.log(`Loaded ${credentialsLoaded} credential(s), set ${providerEnvVarsSet} provider env var(s)`);
 
+  // ── WhatsApp Adapter Initialization ───────────────────────────────────
+
+  // Load openpaw.json config
+  let openpawConfig: OpenpawConfig = {};
+  const openpawConfigPath = join(openpawDir, 'openpaw.json');
+  try {
+    if (existsSync(openpawConfigPath)) {
+      const configRaw = await readFile(openpawConfigPath, 'utf8');
+      const parseResult = OpenpawConfigSchema.safeParse(JSON.parse(configRaw));
+      if (parseResult.success) {
+        openpawConfig = parseResult.data;
+      } else {
+        console.warn('Warning: Invalid openpaw.json format, using defaults');
+      }
+    }
+  } catch {
+    // No config file or parse error
+  }
+
+  // Track WhatsApp adapter for cleanup
+  let whatsappAdapter: any = null;
+
+  // Initialize WhatsApp adapter if configured
+  if (openpawConfig.channels?.whatsapp) {
+    const waConfig = openpawConfig.channels.whatsapp;
+    const waVaultPath = join(openpawDir, 'channels', 'whatsapp');
+    const accountId = waConfig.accountId ?? 'default';
+
+    // Check if WhatsApp vault exists
+    const waVaultFile = join(waVaultPath, `${accountId}.vault`);
+    if (existsSync(waVaultFile)) {
+      try {
+        // Dynamic import to avoid hard dependency
+        const { WhatsAppAdapter } = await import('@openpaw/channel-whatsapp');
+
+        // Read master key
+        const keyData = await readFile(keyFile);
+
+        // Build config object, only including defined properties
+        const adapterConfig: Record<string, unknown> = {
+          vaultDir: waVaultPath,
+          accountId,
+          masterKey: keyData,
+        };
+        if (waConfig.selfChatMode !== undefined) {
+          adapterConfig['selfChatMode'] = waConfig.selfChatMode;
+        }
+        if (waConfig.dmPolicy !== undefined) {
+          adapterConfig['dmPolicy'] = waConfig.dmPolicy;
+        }
+        if (waConfig.allowFrom !== undefined) {
+          adapterConfig['allowFrom'] = waConfig.allowFrom;
+        }
+        if (waConfig.flushIntervalMs !== undefined) {
+          adapterConfig['flushIntervalMs'] = waConfig.flushIntervalMs;
+        }
+
+        whatsappAdapter = new WhatsAppAdapter(adapterConfig as any);
+
+        console.log(`[OpenPaw] WhatsApp adapter initialized (account: ${accountId})`);
+      } catch (err) {
+        console.warn(`[OpenPaw] WhatsApp adapter failed to initialize: ${(err as Error).message}`);
+      }
+    } else {
+      console.log('[OpenPaw] WhatsApp configured but no session found. Run "openpaw migrate --from openclaw" first.');
+    }
+  }
+
   // Track cleanup state
   let cleanedUp = false;
   let openclawProcess: ChildProcess | null = null;
 
-  // Cleanup function - just kill the process, no file restoration needed
+  // Cleanup function - disconnect adapters and kill the process
   const cleanup = async (): Promise<void> => {
     if (cleanedUp) return;
     cleanedUp = true;
 
     console.log('\nShutting down...');
+
+    // Disconnect WhatsApp adapter (flushes session to vault)
+    if (whatsappAdapter) {
+      try {
+        console.log('[OpenPaw] Flushing WhatsApp session...');
+        await whatsappAdapter.disconnect();
+        console.log('[OpenPaw] WhatsApp session saved.');
+      } catch (err) {
+        console.error(`[OpenPaw] Failed to flush WhatsApp: ${(err as Error).message}`);
+      }
+    }
 
     // Kill OpenClaw process if still running
     if (openclawProcess && !openclawProcess.killed) {
@@ -599,9 +703,25 @@ export async function startGateway(config: GatewayStartConfig = {}): Promise<Gat
     });
   }
 
+  // Connect WhatsApp adapter if initialized
+  if (whatsappAdapter) {
+    try {
+      console.log('[OpenPaw] Connecting WhatsApp...');
+      await whatsappAdapter.connect();
+      // Register message handler (simple echo for now, will be replaced with MCP proxy pipeline)
+      whatsappAdapter.onMessage((msg: any) => {
+        console.log(`[WhatsApp] Message from ${msg.from}: ${msg.text}`);
+        // In production, this would go through the MCP proxy pipeline
+      });
+    } catch (err) {
+      console.error(`[OpenPaw] WhatsApp connection failed: ${(err as Error).message}`);
+    }
+  }
+
   return {
     port,
     openclawProcess,
     cleanup,
+    whatsappAdapter,
   };
 }

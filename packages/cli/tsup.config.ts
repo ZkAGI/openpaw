@@ -11,6 +11,15 @@ export default defineConfig({
     '@zkagi/openpaw-scanner',
     '@zkagi/openpaw-migrate',
     '@zkagi/openpaw-gateway',
+    '@openpaw/channel-whatsapp',
+  ],
+  external: [
+    // Baileys optional dependencies - bundled separately
+    '@whiskeysockets/baileys',
+    'sharp',
+    'jimp',
+    'qrcode-terminal',
+    'link-preview-js',
   ],
   banner: {
     js: '#!/usr/bin/env node',

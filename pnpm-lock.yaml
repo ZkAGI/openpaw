@@ -104,9 +104,9 @@ importers:
       '@whiskeysockets/baileys':
         specifier: ^6.7.0
         version: 6.17.16(bufferutil@4.1.0)(eslint@8.57.1)(typescript@5.9.3)(utf-8-validate@5.0.10)
-      zod:
-        specifier: ^3.22.0
-        version: 3.25.76
+      '@zkagi/openpaw-vault':
+        specifier: workspace:*
+        version: link:../../vault
     devDependencies:
       tsup:
         specifier: ^8.0.0
@@ -130,6 +130,9 @@ importers:
         specifier: ^3.22.0
         version: 3.25.76
     devDependencies:
+      '@openpaw/channel-whatsapp':
+        specifier: workspace:*
+        version: link:../channels/whatsapp
       '@zkagi/openpaw-detect':
         specifier: workspace:*
         version: link:../detect
@@ -189,6 +192,9 @@ importers:
 
   packages/gateway:
     dependencies:
+      '@openpaw/channel-whatsapp':
+        specifier: workspace:*
+        version: link:../channels/whatsapp
       '@zkagi/openpaw-vault':
         specifier: workspace:*
         version: link:../vault

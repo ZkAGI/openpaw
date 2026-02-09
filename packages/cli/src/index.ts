@@ -4,10 +4,12 @@ import { detectAgents, formatDetectResultAsJson } from '@zkagi/openpaw-detect';
 import { scanDirectory, type Severity, type CredentialFinding } from '@zkagi/openpaw-scanner';
 import { copyWorkspaceFiles, encryptSession, translateConfig, migrateCredentials, type MigrationSource, MigrationSourceSchema } from '@zkagi/openpaw-migrate';
 import { startGateway } from '@zkagi/openpaw-gateway';
+import { migrateWhatsAppSession } from '@openpaw/channel-whatsapp';
 import { readFile, writeFile, mkdir, readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { createInterface } from 'node:readline';
+import { existsSync } from 'node:fs';
 
 const program = new Command();
 
@@ -374,6 +376,22 @@ program
           for (const error of credResult.errors) {
             console.log(`   Warning: ${error}`);
           }
+        }
+
+        // Step 5: Migrate WhatsApp sessions
+        console.log('\n5. Migrating WhatsApp sessions...');
+        const waResult = await migrateWhatsAppSession({
+          openclawDir: options.openclawDir,
+          openpawDir: CONFIG_DIR,
+          masterKey: key,
+          wipeOriginal: false,
+        });
+
+        if (waResult.found) {
+          console.log(`   Encrypted ${waResult.fileCount} WhatsApp session file(s)`);
+          console.log(`   Account: ${waResult.accountId}`);
+        } else {
+          console.log('   No WhatsApp session found');
         }
       }
 
